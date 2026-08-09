@@ -1,0 +1,161 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "synthetic-support-distillation"
+version = "0.1.0"
+description = "Synthetic-data distillation pipeline for customer-support language models"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Yang Liu" }]
+keywords = [
+  "synthetic-data",
+  "distillation",
+  "customer-support",
+  "qlora",
+  "llm",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core deps for Phase 1 (ingestion, validation, profiling).
+dependencies = [
+  "datasets>=3.0.0",
+  "huggingface-hub>=0.26.0",
+  "numpy>=1.26.0",
+  "pandas>=2.2.0",
+  "pydantic>=2.8.0",
+  "pydantic-settings>=2.4.0",
+  "pyyaml>=6.0.0",
+  "python-dotenv>=1.0.0",
+  "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+# Teacher API generation and lightweight judges.
+generation = [
+  "openai>=1.50.0",
+  "tenacity>=9.0.0",
+  "tiktoken>=0.7.0",
+]
+
+# Near-duplicate / leakage checks (section 8.5).
+filtering = [
+  "sentence-transformers>=3.0.0",
+]
+
+# QLoRA / SFT student training (FR-5).
+training = [
+  "torch>=2.4.0",
+  "transformers>=4.45.0",
+  "accelerate>=0.34.0",
+  "peft>=0.13.0",
+  "trl>=0.11.0",
+  "bitsandbytes>=0.44.0; platform_system != 'Darwin'",
+]
+
+# Experiment tracking (choose one or both at install time).
+tracking = [
+  "mlflow>=2.16.0",
+  "wandb>=0.18.0",
+]
+
+# Inference API and interactive demo (FR-7).
+serving = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "gradio>=4.44.0",
+]
+
+# Full research/runtime stack without local editable tooling.
+all = [
+  "synthetic-support-distillation[generation,filtering,training,tracking,serving]",
+]
+
+# Developer tooling and tests (FR-8).
+dev = [
+  "pytest>=8.3.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.6.0",
+  "mypy>=1.11.0",
+  "pre-commit>=3.8.0",
+  "ipykernel>=6.29.0",
+  "jupyter>=1.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yangliu/synthetic-data-distillation-customer-support"
+Documentation = "https://github.com/yangliu/synthetic-data-distillation-customer-support#readme"
+Repository = "https://github.com/yangliu/synthetic-data-distillation-customer-support"
+Issues = "https://github.com/yangliu/synthetic-data-distillation-customer-support/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+  "src/data",
+  "src/generation",
+  "src/filtering",
+  "src/training",
+  "src/evaluation",
+  "src/serving",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/configs",
+  "/tests",
+  "/PRD.md",
+  "/README.md",
+  "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "app"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # bugbear
+  "UP",  # pyupgrade
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+  "data",
+  "generation",
+  "filtering",
+  "training",
+  "evaluation",
+  "serving",
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = [
+  "data",
+  "generation",
+  "filtering",
+  "training",
+  "evaluation",
+  "serving",
+]
+ignore_missing_imports = true
