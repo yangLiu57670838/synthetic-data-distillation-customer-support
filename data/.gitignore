@@ -1,0 +1,3 @@
+# Keep this folder in git, but ignore large local datasets and generated files.
+*
+!.gitignore

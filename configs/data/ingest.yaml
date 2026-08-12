@@ -1,0 +1,24 @@
+# Defaults for seed-dataset ingestion (FR-1).
+source:
+  # Prefer the Hugging Face mirror of the Bitext customer-support dataset for reproducible pulls.
+  # Kaggle alternative: https://www.kaggle.com/datasets/bitext/bitext-gen-ai-chatbot-customer-support-dataset
+  hf_dataset_id: bitext/Bitext-customer-support-llm-chatbot-training-dataset
+  hf_split: train
+  # Optional immutable revision (commit SHA). Leave null to use the Hub default tip.
+  hf_revision: null
+  # Optional local CSV/JSON/JSONL/Parquet path. When set, HF download is skipped.
+  local_path: null
+
+output:
+  normalized_path: data/processed/seed_normalized.jsonl
+  report_path: reports/seed_quality_report.json
+  manifest_path: reports/seed_manifest.json
+
+licence_note: >
+  Review the Bitext / Hugging Face dataset card and licence before redistributing
+  modified or derived data. This project treats the source as a curated hybrid
+  synthetic dataset, not natural customer conversations.
+
+provenance_note: >
+  Curated customer-support dataset produced with hybrid generation and linguistic
+  curation (Bitext). Used here as taxonomy, seed, and original-data baseline source.

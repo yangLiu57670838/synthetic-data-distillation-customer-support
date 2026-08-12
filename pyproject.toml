@@ -91,6 +91,9 @@ dev = [
   "jupyter>=1.1.0",
 ]
 
+[project.scripts]
+ingest-data = "data.ingest:main"
+
 [project.urls]
 Homepage = "https://github.com/yangliu/synthetic-data-distillation-customer-support"
 Documentation = "https://github.com/yangliu/synthetic-data-distillation-customer-support#readme"

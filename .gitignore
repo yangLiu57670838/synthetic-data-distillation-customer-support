@@ -1,0 +1,15 @@
+# Downloaded source datasets (large; keep local only)
+data/raw/
+
+# Generated ingest outputs
+data/processed/
+
+# Virtualenv
+.venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

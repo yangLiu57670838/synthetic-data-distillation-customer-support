@@ -50,6 +50,27 @@ pip install -e ".[all,dev]"
 
 > **Note:** `bitsandbytes` (in the `training` extra) is skipped on macOS. Use a Linux/CUDA environment for quantized QLoRA training.
 
+## Ingest seed data (FR-1)
+
+Downloads the Bitext customer-support dataset from Hugging Face (or a local file), validates the schema, normalizes fields, and writes a quality report.
+
+```bash
+# from Hugging Face (default config: configs/data/ingest.yaml)
+ingest-data
+
+# or from a local CSV / JSON / JSONL / Parquet file
+ingest-data --local-path /path/to/bitext.csv
+
+# optional: pin an immutable Hub revision
+ingest-data --hf-revision <commit-sha>
+```
+
+Outputs:
+
+- `data/processed/seed_normalized.jsonl`
+- `reports/seed_quality_report.json`
+- `reports/seed_manifest.json`
+
 ## Development commands
 
 ```bash

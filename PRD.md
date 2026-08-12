@@ -69,8 +69,6 @@ Frontier models can generate large quantities of synthetic training data, but sy
 ### 6.1 Primary users
 
 - Researchers examining synthetic-data quality and knowledge distillation.
-- ML engineers who need a reproducible domain-adaptation pipeline.
-- Reviewers assessing the owner's readiness for PhD research or AI engineering roles.
 
 ### 6.2 Demonstration user
 
@@ -538,7 +536,6 @@ Notebooks should support exploration and communication; production pipeline logi
 - Technical paper-style report containing methodology, results, ablations, limitations, and failure analysis.
 - Interactive inference demo.
 - Kaggle notebook presenting the problem, exploratory analysis, main experiment, and results.
-- Short project summary suitable for a CV and PhD research statement.
 
 ## 20. Open decisions
 
