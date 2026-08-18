@@ -93,6 +93,7 @@ dev = [
 
 [project.scripts]
 ingest-data = "data.ingest:main"
+partition-data = "data.partitions:main"
 
 [project.urls]
 Homepage = "https://github.com/yangliu/synthetic-data-distillation-customer-support"

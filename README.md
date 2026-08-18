@@ -71,6 +71,30 @@ Outputs:
 - `reports/seed_quality_report.json`
 - `reports/seed_manifest.json`
 
+## Partition data (PRD 8.2)
+
+After ingest, split the normalized seeds into train / validation / held-out test / challenge sets, with exact-dedup and leakage checks.
+
+```bash
+# uses configs/data/partitions.yaml (expects ingest output)
+partition-data
+
+# optional overrides
+partition-data --input data/processed/seed_normalized.jsonl
+partition-data --independent-test data/raw/independent_test.jsonl
+```
+
+Outputs:
+
+- `data/processed/partitions/seed_train.jsonl`
+- `data/processed/partitions/validation.jsonl`
+- `data/processed/partitions/held_out_test.jsonl` (provisional Bitext hold-out)
+- `data/processed/partitions/challenge.jsonl`
+- `reports/partition_report.json`
+- `reports/partition_manifest.json`
+
+> Bitext `held_out_test` is **not** a true independent real-world test set. Provide `--independent-test` when you have teacher-unavailable examples.
+
 ## Development commands
 
 ```bash

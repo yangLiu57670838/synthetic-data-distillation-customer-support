@@ -2,9 +2,11 @@
 
 ## Synthetic-Data Distillation for Customer-Support Language Models
 
-**Status:** Draft 1.0  
-**Project type:** Research and AI engineering portfolio project  
-**Owner:** Yang Liu  
+**Status:** Draft 1.1  
+**Project type:** Research  
+**Author:** Yang Liu  
+
+**Study scope:** a cost-constrained preliminary study (see section 11.4). The full experimental matrix in section 11.2 is deferred.  
 
 ## 1. Executive summary
 
@@ -12,7 +14,9 @@ This project investigates whether high-quality synthetic customer-support data g
 
 The system will use a curated customer-support dataset as the source of domain taxonomy and seed examples. A teacher model will expand selected seeds into diverse instruction-response examples. Automated checks, model-based review, and limited human review will filter the generated data. A small open-weight model will then be fine-tuned using QLoRA and evaluated against controlled baselines.
 
-The final deliverables will include a reproducible data-generation pipeline, versioned datasets, fine-tuned model, evaluation suite, experiment report, inference service, and public demonstration.
+Intended outputs include a reproducible data-generation pipeline, versioned datasets, a fine-tuned student model, an evaluation suite, and a research report.
+
+This revision limits the present study to a teacher-API pilot, approximately 1,000 main synthetic examples, and training conditions A, B, and E (D if compute budget remains). Volume, teacher-tier, and model-size ablations remain part of the full research design and are out of scope for the current budget.
 
 ## 2. Problem statement
 
@@ -47,7 +51,7 @@ Frontier models can generate large quantities of synthetic training data, but sy
 - Build an end-to-end, reproducible synthetic-data and fine-tuning pipeline.
 - Produce a deployable customer-support model that identifies intent and generates an appropriate response.
 - Provide traceable links between source seeds, generation prompts, synthetic examples, filtering decisions, training runs, and evaluation results.
-- Publish artifacts that demonstrate both research rigor and production engineering skills.
+- Record provenance so experiments can be inspected and reproduced.
 
 ### 5.2 Research goals
 
@@ -162,6 +166,8 @@ Data must be partitioned before synthetic generation:
 - **Validation set:** examples used for model selection and threshold tuning.
 - **Independent test set:** human-written or independently sourced examples unavailable to the generation teacher.
 - **Challenge set:** ambiguous, noisy, rare-intent, multi-intent, out-of-scope, safety, and prompt-injection cases.
+
+These challenge types are chosen because a high average score on ordinary Bitext-style examples can hide the failures that matter in support: unclear requests, messy language, uncommon intents, mixed goals, and cases that should be refused or escalated. They match hypothesis H3 and secondary question 5 (gains on rare, ambiguous, noisy, multi-intent, and out-of-scope inputs) and the use cases in section 7. The set is carved out before generation so the teacher and student training pool do not see it. Average metrics stay on the frozen test set; the challenge set is the stress test.
 
 Near-duplicate detection must be applied across all partitions to reduce leakage.
 
@@ -291,15 +297,17 @@ A new developer must be able to reproduce data processing, a small generation ru
 
 ### 11.1 Required conditions
 
-| ID | Condition | Purpose |
-|---|---|---|
-| A | Base student without fine-tuning | Establish zero-shot baseline |
-| B | Student fine-tuned on original curated data | Establish ordinary SFT baseline |
-| C | Student fine-tuned on unfiltered synthetic data | Measure raw synthetic-data value |
-| D | Student fine-tuned on filtered synthetic data | Measure filtering value |
-| E | Student fine-tuned on original plus filtered synthetic data | Test primary hypothesis |
+| ID | Condition | Purpose | Current scope |
+|---|---|---|---|
+| A | Base student without fine-tuning | Establish zero-shot baseline | Required (evaluation only; no GPU train) |
+| B | Student fine-tuned on original curated data | Establish ordinary SFT baseline | Required (1 training run) |
+| C | Student fine-tuned on unfiltered synthetic data | Measure raw synthetic-data value | Deferred |
+| D | Student fine-tuned on filtered synthetic data | Measure filtering value | Included if a third training run is feasible |
+| E | Student fine-tuned on original plus filtered synthetic data | Test primary hypothesis H1 | Required (1 training run) |
 
-### 11.2 Recommended ablations
+Primary comparison for this study: **A vs B vs E** — whether adding approximately 1,000 filtered synthetic examples improves the original-data student. Condition D, if run, additionally informs H2 (filtering) without an unfiltered-synthetic training run.
+
+### 11.2 Recommended ablations (full research design; deferred)
 
 - Synthetic-data volume: 1k, 5k, 10k, and 20k examples.
 - Teacher tier: inexpensive versus balanced versus strongest teacher.
@@ -308,6 +316,8 @@ A new developer must be able to reproduce data processing, a small generation ru
 - Student size: approximately 1.5B versus 3B parameters.
 - Difficult examples: included versus excluded.
 
+These ablations are out of scope for this study and should be reported as limitations and future work.
+
 ### 11.3 Controls
 
 - Use identical frozen evaluation sets across conditions.
@@ -315,6 +325,27 @@ A new developer must be able to reproduce data processing, a small generation ru
 - Repeat important experiments with multiple random seeds.
 - Record prompt, dependency, model, dataset, and hardware versions.
 - Prevent test examples or close paraphrases from entering teacher prompts or training data.
+
+For this study, use **one locked student training recipe** (learning rate, epochs or steps, batch size, LoRA rank) selected on the validation set from Condition B or a small pilot. Hyperparameters must not be retuned per condition. Multiple random seeds are deferred.
+
+### 11.4 Cost-constrained execution plan
+
+Teacher generation uses an **API**. Local development hardware runs ingestion, partitioning, and API orchestration. Student QLoRA requires a CUDA GPU when available; a 16GB unified-memory workstation is not the training target.
+
+| Stage | Volume | Notes |
+|---|---|---|
+| Prompt pilot | **100–200** raw synthetic examples | Measure schema-valid rate, $/example, and seconds/example; revise prompts |
+| Main generation | **approximately 1,000** raw examples (up to **2,000** if measured unit cost permits) | Draw seeds only from `seed_train`; generate about 20–25% extra so filtering can still leave about 800–1,000 accepted rows |
+| Filtering | Deterministic checks required; model-based judging if budget permits | Keep rejected rows for analysis |
+| Human review | Small stratified sample of the 1k set | Record agreement; a full labelling pass is not required for this study |
+| Training runs | **A** (evaluation only) + **B** + **E**; **D** if compute remains | Same hyperparameters; only the data mixture changes |
+| Evaluation | Frozen validation, Bitext held-out test, and challenge set | Independent non-Bitext test remains best-effort / future work if no external source exists |
+
+Do **not** generate the 5k / 10k / 20k volume ladder in this pass. Scale only after the 200-example pilot cost is known:
+
+```text
+estimated_cost(N) ≈ (pilot_cost / n_pilot) × N
+```
 
 ## 12. Evaluation plan
 
@@ -359,21 +390,17 @@ Lexical-overlap metrics must not be treated as sufficient measures of response q
 
 ## 13. Success criteria
 
-The project is successful when:
+**This study:** successful when Conditions A, B, and E have been evaluated on the frozen held-out and challenge sets, the comparison is reported with sample sizes and limitations, and the pipeline from ingest through evaluation can be reproduced from configuration files. A negative or small H1 result remains a valid research outcome.
 
-1. Condition E improves independent-test macro-F1 or the primary response-quality metric over Condition B by a predefined meaningful margin.
-2. The improvement is accompanied by uncertainty estimates and does not depend only on teacher-generated evaluation data.
-3. Filtered synthetic data performs better than or uses fewer examples than unfiltered synthetic data at similar quality.
-4. The final student meets documented latency and resource targets on the selected deployment hardware.
-5. All published artifacts contain adequate provenance, licence, limitation, and reproducibility documentation.
-6. The project produces a defensible conclusion even if the primary hypothesis is not supported.
+**Full research design (deferred):** additionally require C and D, volume ablations, uncertainty estimates on an independent test set that is not teacher-generated, and the targets below.
 
 Initial target values, to be finalized after baseline measurement:
 
-- At least 3 percentage points improvement in macro-F1 over original-data-only SFT, or a clearly justified equivalent improvement in response quality.
+- Scoped: report Condition E vs B honestly; do not require a 3-point macro-F1 gain at ~1k synthetic scale.
+- Full design: at least 3 percentage points improvement in macro-F1 over original-data-only SFT, or a clearly justified equivalent improvement in response quality.
 - Less than 2% critical safety or policy failures on the challenge set.
-- At least 80% schema-valid synthetic generations before filtering.
-- At least 90% agreement between accepted synthetic labels and a human-reviewed stratified sample.
+- At least 80% schema-valid synthetic generations before filtering (measure on the 200-example pilot first).
+- Human-reviewed agreement on a small stratified sample; 90% of all accepted labels is deferred.
 - Reproduction of the main evaluation table from a documented command.
 
 ## 14. Technical architecture
@@ -495,59 +522,58 @@ Notebooks should support exploration and communication; production pipeline logi
 ### Phase 2: Synthetic-data pilot
 
 - Design versioned generation prompts and schemas.
-- Generate a small pilot dataset.
-- Measure schema validity, diversity, label consistency, and cost.
-- Conduct initial human review and revise prompts.
+- Generate **100–200** pilot examples via teacher API.
+- Measure schema validity, diversity, label consistency, **latency, and $/example**.
+- Conduct initial human review of a small sample and revise prompts.
 
 ### Phase 3: Generation and filtering
 
-- Generate the main synthetic datasets.
-- Apply validation, deduplication, quality scoring, and review.
-- Publish data manifests and quality reports.
+- Generate the **main approximately 1,000** synthetic dataset (up to 2,000 if measured unit cost permits), from `seed_train` only.
+- Apply validation, deduplication, quality scoring, and review; keep rejected rows.
+- Publish data manifests and quality reports. Do not run 5k/10k/20k in this pass.
 
 ### Phase 4: Fine-tuning and experiments
 
-- Train Conditions A–E.
-- Run volume and filtering ablations.
-- Track hardware, cost, hyperparameters, and random seeds.
+- Train **B** and **E** (**D** if compute remains). Evaluate **A** without training.
+- Skip volume and teacher-tier ablations.
+- Track hardware, cost, hyperparameters, and the single training-recipe seed.
 
 ### Phase 5: Evaluation and analysis
 
-- Run frozen evaluations.
-- Calculate uncertainty and effect sizes.
-- Perform subgroup and error analysis.
-- Write the technical report.
+- Run frozen evaluations on held-out and challenge sets.
+- Report sample counts and qualitative error analysis; full bootstrap/multi-seed stats are deferred if compute is limited.
+- Write the research report, including scope limitations.
 
 ### Phase 6: Deployment and publication
 
-- Quantize and serve the selected model.
-- Build an interactive Hugging Face Space or equivalent demo.
+- If a trained adapter is available, a small inference demo may be included.
 - Publish model and dataset cards where licensing permits.
-- Publish a polished Kaggle notebook and GitHub repository.
+- Documented repository with configurations sufficient to reproduce the main table.
 
-## 19. Portfolio deliverables
+## 19. Deliverables
 
-- Public GitHub repository with tested, reusable modules.
+- Version-controlled repository with tested, reusable modules.
 - Reproducible synthetic-data pipeline.
 - Versioned synthetic dataset and dataset card.
 - Fine-tuned student model and model card.
 - Frozen evaluation suite and challenge set.
 - Experiment dashboard or exported run report.
-- Technical paper-style report containing methodology, results, ablations, limitations, and failure analysis.
-- Interactive inference demo.
-- Kaggle notebook presenting the problem, exploratory analysis, main experiment, and results.
+- Research report containing methodology, results, deferred ablations (if any), limitations, and failure analysis.
+- Inference demonstration if a trained artifact is available.
+- Exploratory notebook if useful for the report, not required.
 
 ## 20. Open decisions
 
-- Final teacher model and maximum API budget.
+- Final teacher model (prefer an inexpensive balanced API for the 1k run unless quality from the pilot is poor).
+- Maximum API budget: size the 1k run from the 200-example pilot; do not commit to 20k.
 - Whether the main task is intent classification, response generation, or a structured combination of both.
-- Independent test-set source and human-review process.
+- Independent test-set source and human-review process (Bitext held-out is provisional).
 - Final response-policy specification.
-- Primary metric and minimum meaningful effect size.
-- Available GPU hardware and maximum training time.
+- Primary metric: macro-F1 and/or rubric response quality on frozen eval; do not require a 3-point gain at 1k scale.
+- Student training hardware: CUDA GPU for Conditions B and E; local development machine for ingest, partition, and API generation only.
 - Experiment-tracking and dataset-versioning tools.
 - Publication constraints imposed by seed-data and teacher-model licences.
 
 ## 21. Definition of done
 
-The project is complete when all required experimental conditions have been run, the frozen independent evaluation has been reported, the main results can be reproduced from documented configurations, and the repository contains sufficient data/model provenance, tests, cards, limitations, and deployment instructions for external review.
+This study is complete when ingest and frozen partitions exist, a documented 100–200 example generation pilot and an approximately 1,000-example main synthetic set have been filtered, Conditions A, B, and E have been evaluated on the frozen held-out and challenge sets, main results can be reproduced from configuration files, and the research report states what was deferred (Condition C, volume ablations, a non-Bitext independent test, multi-seed statistics). The full research design in sections 11.1–11.2 remains a longer-term target and is not required for completion of this study.

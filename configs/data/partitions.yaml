@@ -1,0 +1,38 @@
+# Defaults for dataset partitioning before synthetic generation (PRD section 8.2).
+input:
+  normalized_path: data/processed/seed_normalized.jsonl
+
+output:
+  dir: data/processed/partitions
+  seed_train_path: data/processed/partitions/seed_train.jsonl
+  validation_path: data/processed/partitions/validation.jsonl
+  held_out_test_path: data/processed/partitions/held_out_test.jsonl
+  challenge_path: data/processed/partitions/challenge.jsonl
+  report_path: reports/partition_report.json
+  manifest_path: reports/partition_manifest.json
+
+# Optional external independent test JSONL (SeedRecord schema).
+# Leave null until a non-Bitext, teacher-unavailable test set exists (PRD 8.1 / 8.2).
+independent_test_path: null
+
+split:
+  seed: 42
+  # Applied to non-challenge rows after stratified-by-intent sampling.
+  validation_fraction: 0.1
+  held_out_test_fraction: 0.1
+  # Remainder becomes seed_train (training + generation pool).
+
+challenge:
+  # Bitext language-generation flag characters that mark harder cases.
+  # N=noise, Q=colloquial, W=offensive, P=politeness variation (see Bitext docs).
+  flag_markers: ["N", "Q", "W"]
+  # Intents with fewer than this many examples are treated as rare.
+  rare_intent_max_count: 800
+  # Cap challenge size as a fraction of all rows (after exact dedup).
+  max_fraction: 0.08
+  min_per_intent: 0
+  max_per_intent: 80
+
+leakage:
+  # Exact match after lowercasing, punctuation strip, and whitespace collapse.
+  drop_train_near_duplicates: true

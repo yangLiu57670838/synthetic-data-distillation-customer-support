@@ -91,3 +91,24 @@ class QualityReport(BaseModel):
     assistant_response_length: dict[str, float]
     transformation_steps: list[str]
     extras: dict[str, Any] = Field(default_factory=dict)
+
+
+class PartitionReport(BaseModel):
+    """Summary of train/val/test/challenge partitioning (PRD section 8.2)."""
+
+    created_at: datetime
+    input_path: str
+    n_input_rows: int
+    n_after_exact_dedup: int
+    n_exact_duplicates_removed: int
+    n_seed_train: int
+    n_validation: int
+    n_held_out_test: int
+    n_challenge: int
+    n_independent_test: int
+    n_train_removed_for_leakage: int
+    intent_counts_by_split: dict[str, dict[str, int]]
+    challenge_selection: dict[str, Any]
+    independent_test_status: str
+    notes: list[str]
+    extras: dict[str, Any] = Field(default_factory=dict)
