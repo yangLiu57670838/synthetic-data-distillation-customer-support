@@ -95,6 +95,16 @@ Outputs:
 
 > Bitext `held_out_test` is **not** a true independent real-world test set. Provide `--independent-test` when you have teacher-unavailable examples.
 
+## Generation prompts (FR-2 / PRD 8.4)
+
+Prompt templates only — no teacher API call yet. Jobs are planned from `seed_train`.
+
+```bash
+python -c "from generation.prompts import PROMPT_VERSION; print(PROMPT_VERSION)"
+```
+
+Config: `configs/generation/generation.yaml` (`v1`, 200-example pilot, ~1000 main).
+
 ## Development commands
 
 ```bash

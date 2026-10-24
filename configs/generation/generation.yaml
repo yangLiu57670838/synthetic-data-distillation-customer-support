@@ -1,1 +1,45 @@
-# Teacher-model generation settings: model name, prompt version, sampling parameters, and volume caps (FR-2).
+# Teacher-model generation settings (FR-2, PRD 11.4).
+prompt:
+  version: v1
+  # Allowed intents come from Bitext taxonomy (src/data/schema.py BITEXT_INTENTS).
+
+input:
+  seed_train_path: data/processed/partitions/seed_train.jsonl
+
+output:
+  raw_path: data/processed/synthetic_raw.jsonl
+  jobs_path: data/processed/generation_jobs.jsonl
+  report_path: reports/generation_report.json
+
+volume:
+  n_pilot: 200
+  n_main: 1000
+  # Generate extra so filtering can still leave ~800–1000 accepted rows.
+  oversample_fraction: 0.25
+
+# Mix of PRD 8.4 variation types (weights are relative).
+variation_weights:
+  paraphrase: 16
+  formal: 8
+  informal: 12
+  noise: 12
+  incomplete: 8
+  tone_frustrated: 8
+  tone_angry: 6
+  regional: 4
+  ambiguous: 6
+  multi_intent: 8
+  missing_info: 6
+  out_of_scope: 4
+  safety_adversarial: 2
+
+sampling:
+  seed: 42
+  # Do not send validation / held-out / challenge rows to the teacher.
+  seed_source: seed_train
+
+teacher:
+  # Placeholder; generate.py will read this. Do not hard-code a vendor in prompts.
+  model: null
+  temperature: 0.8
+  max_output_tokens: 700

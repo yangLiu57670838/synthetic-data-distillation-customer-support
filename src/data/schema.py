@@ -68,6 +68,34 @@ class SeedRecord(BaseModel):
         return cleaned
 
 
+class SyntheticRecord(BaseModel):
+    """Teacher-generated example (PRD 8.3). Filtering fills checks/accepted later."""
+
+    example_id: str
+    parent_seed_ids: list[str]
+    category: str
+    intent: str
+    user_message: str
+    assistant_response: str
+    difficulty: str = "medium"
+    variation_type: list[str] = Field(default_factory=list)
+    teacher_model: str
+    generation_prompt_version: str
+    generation_parameters: dict[str, Any] = Field(default_factory=dict)
+    automated_checks: dict[str, Any] = Field(default_factory=dict)
+    judge_scores: dict[str, Any] = Field(default_factory=dict)
+    human_review: dict[str, Any] | None = None
+    accepted: bool | None = None
+
+    @field_validator("category", "intent", "user_message", "assistant_response")
+    @classmethod
+    def non_empty_synthetic(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("field must be a non-empty string")
+        return cleaned
+
+
 class QualityReport(BaseModel):
     """Data-quality report produced by FR-1 ingestion."""
 

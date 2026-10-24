@@ -259,6 +259,82 @@ Student-selection requirements:
 - Feasible fine-tuning on accessible GPU infrastructure.
 - Reproducible tokenizer and chat-template configuration.
 
+**Tokenizer requirement:** the student tokenizer (pin to a specific Hugging Face revision) must be used at every stage that involves token counting or sequence construction: length checks during filtering, sequence-length statistics in the quality report, chat-template formatting before training, and token-count measurement in the evaluation suite. Do not use a different tokenizer (e.g. the teacher model's tokenizer or a generic tiktoken) for any of these steps. The tokenizer revision and vocabulary size must be recorded in every dataset manifest and training config.
+
+### 9.3 Fine-tuning method: QLoRA instead of full-parameter fine-tuning
+
+**Why not full-parameter fine-tuning:**
+Full-parameter fine-tuning updates all ~1.5 billion weights. This requires storing the model weights, the gradients, and the Adam optimizer states (two momentum tensors per parameter) simultaneously in GPU VRAM. For a 1.5B model in float16 this is approximately 24–48 GB of VRAM. Available GPU infrastructure (CUDA GPU via cloud notebook) typically has 16–40 GB, making full-parameter fine-tuning impractical or unstable at this scale. Full-parameter fine-tuning also risks catastrophic forgetting of the base model's general language capabilities.
+
+**LoRA without quantization:**
+Standard LoRA adds the same small trainable matrices (ΔW = A × B) but loads base model weights in their original float16 precision. For a 1.5B model the base weights alone occupy ~3 GB, but the Adam optimizer states and activations still push total VRAM to ~12–20 GB. Standard LoRA is feasible on a 16–24 GB GPU but leaves little headroom for larger batch sizes or longer sequences.
+
+**Why QLoRA instead of LoRA:**
+QLoRA (Quantized Low-Rank Adaptation) extends LoRA by also loading the frozen base model weights in **4-bit NF4 format** via `bitsandbytes`. This halves the base-weight memory footprint vs float16, bringing total VRAM for a 1.5B model to approximately **6–10 GB** — well within a T4 16GB GPU. The LoRA adapter matrices themselves are still computed in float16 or bfloat16 for numerical stability.
+
+QLoRA does this with three steps:
+1. Load frozen base model in 4-bit NF4 quantization — roughly 4× smaller than float16.
+2. Add trainable LoRA adapters (A × B) in float16. Only these are updated by the optimizer.
+3. During the forward pass, dequantize each 4-bit block to float16 for the computation, then discard the dequantized copy immediately.
+
+**Trade-offs: LoRA vs QLoRA**
+
+| | Standard LoRA | QLoRA |
+|---|---|---|
+| Base model precision | float16 (~3 GB for 1.5B) | 4-bit NF4 (~0.9 GB for 1.5B) |
+| Total VRAM (1.5B) | ~12–20 GB | ~6–10 GB |
+| Accuracy vs full-param | Very close (< 0.5 pp typical) | Very close (< 1–2 pp typical) |
+| Speed | Faster per step | Slightly slower (dequant overhead ~5–15%) |
+| Hardware requirement | CUDA; 16–24 GB sufficient | CUDA required; `bitsandbytes` library; no Apple Silicon MPS support |
+| Adapter size | ~20–80 MB | ~20–80 MB (same, adapters not quantized) |
+| Reproducibility | High | High if `bitsandbytes` version is pinned |
+
+For this project QLoRA is the correct choice because:
+- A T4 16GB (the minimum accessible GPU) fits 1.5B QLoRA with room to spare; the same GPU may be tight with standard LoRA depending on batch size and sequence length.
+- The 5–15% slower step speed is acceptable given the small training set (~20–21k rows, 2–3 epochs).
+- The small accuracy gap from 4-bit quantization is not meaningful for the B vs E comparison, because both conditions use the same quantization.
+- The adapter artifact is the same size as standard LoRA and can be shared in the same way.
+
+The resulting adapter is approximately 20–80 MB regardless of the base model size. For this project the central experiment varies training data (Conditions B vs E), not architecture, so an equivalent and reproducible fine-tuning method across conditions is more important than maximizing absolute performance in any single run.
+
+**LoRA rank selection for this project:**
+
+The rank `r` controls the expressiveness of the adapter. A higher rank trains more parameters and can model more complex task-specific differences, but also increases VRAM usage and overfitting risk on small datasets.
+
+Guidelines:
+
+| Rank | Trainable parameters (approx, 1.5B model) | When appropriate |
+|---|---|---|
+| r = 4 | ~1M | Very small dataset (<1k), risk of overfitting, minimal VRAM |
+| r = 8 | ~2M | Good default for single-domain SFT with 5k–20k examples |
+| r = 16 | ~4M | Stronger signal needed, larger dataset, more VRAM available |
+| r = 32 | ~8M | Closer to full-parameter behaviour, rarely needed for SFT |
+
+For this study with approximately 20k original seed_train rows (Condition B) and 20k + ~1k synthetic (Condition E), **r = 8 is the recommended starting point**. If validation macro-F1 plateaus early and training loss is still high, try r = 16 in a follow-up run. Do not change rank between Conditions B and E; the adapter rank must be identical for a fair comparison.
+
+Additional LoRA configuration to document for each run:
+
+- Target modules (which linear layers receive adapters; e.g. `q_proj`, `v_proj`, optionally `k_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`)
+- `lora_alpha` (scaling; typically 2× rank, so 16 for r = 8)
+- `lora_dropout` (typically 0.05–0.1 for regularisation)
+- Whether bias parameters are trained
+
+### 9.4 Training approach: synthetic-data distillation versus alternatives
+
+Synthetic-data distillation in this study is not a separate training algorithm. It is supervised fine-tuning (SFT) in which part of the training data is written by a teacher model. The training objective, optimiser, and QLoRA recipe are identical across conditions; only the data source changes. This makes the effect of teacher-generated data measurable in isolation.
+
+**Compared with SFT on original data only.** Plain SFT on the Bitext `seed_train` partition is retained as Condition B, the baseline. It is not rejected; it is the control. The limitation it cannot address is coverage: the curated seed set has limited phrasing diversity and few noisy, multi-intent, out-of-scope, or adversarial requests. Collecting more human-labelled data to fill those gaps is slow and costly. A teacher model can produce targeted examples of exactly those cases (section 8.4) for a one-time API cost. The research question is therefore whether adding such data to SFT (Condition E) improves on plain SFT (Condition B).
+
+**Compared with reinforcement fine-tuning (RLHF, PPO, DPO, GRPO, or grader-based reinforcement fine-tuning).** Reinforcement methods optimise the model against a reward signal rather than imitating target outputs. They are not chosen for this study because:
+
+- The task has clear target outputs (an intent label and a policy-compliant reply), which suits imitation learning directly. Reinforcement methods add most value when good outputs are easy to score but hard to write.
+- They require a reward model, a grader, or preference pairs, each of which must itself be built and validated. A flawed reward invites reward hacking, which would confound the comparison.
+- Training is less stable and more compute-intensive than SFT, which conflicts with the cost constraints in section 11.4.
+- Reinforcement fine-tuning is normally applied after an SFT stage, not instead of it. An SFT baseline is needed first in any case.
+- Changing the training algorithm and the data source at the same time would make it impossible to attribute any improvement to the synthetic data.
+
+Preference-based refinement (for example, DPO on pairs ranked by the model judge) is recorded as future work, to be applied on top of the best SFT checkpoint.
+
 ## 10. Functional requirements
 
 ### FR-1: Data ingestion
@@ -279,7 +355,7 @@ Each training dataset must have a manifest containing its source versions, row c
 
 ### FR-5: Fine-tuning
 
-The training system must support QLoRA/SFT, deterministic seeding where possible, resumable checkpoints, configurable hyperparameters, and experiment logging.
+The training system must support QLoRA/SFT (see section 9.3 for method rationale and rank guidance), deterministic seeding where possible, resumable checkpoints, configurable hyperparameters, and experiment logging. All training examples must be tokenized and chat-template–formatted using the pinned student tokenizer before training; the tokenizer revision, LoRA rank, alpha, dropout, and target modules must be logged alongside every training run.
 
 ### FR-6: Evaluation
 
@@ -327,6 +403,45 @@ These ablations are out of scope for this study and should be reported as limita
 - Prevent test examples or close paraphrases from entering teacher prompts or training data.
 
 For this study, use **one locked student training recipe** (learning rate, epochs or steps, batch size, LoRA rank) selected on the validation set from Condition B or a small pilot. Hyperparameters must not be retuned per condition. Multiple random seeds are deferred.
+
+**Starting training recipe (to be confirmed on a Condition B pilot, then locked):**
+
+| Setting | Value |
+|---|---|
+| Learning rate | `2e-4`, cosine schedule, warmup ratio `0.03` |
+| Optimizer | `paged_adamw_8bit` |
+| Epochs | `2` (maximum `3`); keep the best epoch by validation macro-F1 |
+| Per-device batch size | `8` on a T4; `16` on an L4 or A100 |
+| Gradient accumulation | `4` on a T4; `2` on an L4 or A100 (effective batch size 32 in both cases) |
+| Max sequence length | `512` tokens |
+| Precision | `fp16` on a T4 (no bf16 support); `bf16` on an L4 or A100 |
+| Gradient checkpointing | Enabled |
+| LoRA | `r = 8`, `lora_alpha = 16`, `lora_dropout = 0.05` (see section 9.3) |
+| Random seed | `42` |
+
+Rationale:
+
+- **Sequence length.** A Bitext example is roughly 12 tokens of customer message and 150 tokens of reply, plus chat-template overhead, giving about 200–250 tokens. A limit of 512 covers this without wasting memory. Confirm with student-tokenizer length statistics before locking.
+- **Run length.** About 20,000 training rows at an effective batch size of 32 is about 625 optimiser steps per epoch, or about 1,250 steps over 2 epochs.
+- **Learning rate.** LoRA adapters typically need a higher learning rate than full fine-tuning; `1e-4` to `2e-4` is the usual range. If validation loss is unstable in the pilot, lower it to `1e-4` and apply the same value to every condition.
+- **Effective batch size.** Holding the effective batch size at 32 keeps results comparable if Conditions B and E are trained on different GPU types.
+
+**Training-length decision for Conditions B and E:**
+
+Condition E contains about 1,000 more rows than Condition B, so with a fixed number of epochs it receives roughly 5% more optimiser steps. Two options satisfy the control in this section:
+
+1. Fix the number of epochs for both conditions and report the step and token counts of each run.
+2. Fix `max_steps` to the same value for both conditions, so Condition B repeats some examples to match Condition E.
+
+Option 1 is preferred for this study because the step difference is small and repeating examples in Condition B would introduce a different confound. The step and token counts of every run must be recorded and reported alongside the results.
+
+**Checkpoint and epoch selection (minimum requirement for this study):**
+
+- Save the final adapter checkpoint at the end of each training run (Conditions B and E). LoRA adapters are approximately 20–80 MB each.
+- Record validation loss and validation macro-F1 at the end of every epoch.
+- Select the epoch with the best validation macro-F1 as the checkpoint used for frozen held-out and challenge evaluation.
+- Saving a checkpoint at every epoch end is recommended so the best epoch can be reloaded without retraining; delete non-best checkpoints after selection to save disk.
+- Trained adapters should be pushed to a version-controlled store (e.g. Hugging Face Hub private repo) rather than relying on ephemeral GPU session storage.
 
 ### 11.4 Cost-constrained execution plan
 
@@ -388,6 +503,21 @@ Lexical-overlap metrics must not be treated as sufficient measures of response q
 - Include effect sizes, not only p-values.
 - Analyze failure categories and representative examples.
 
+### 12.5 Research report plan
+
+The research report should be short and follow this outline:
+
+1. **Introduction.** The research question (section 3) and why small customer-support models need more diverse training data.
+2. **Method choice.** Why synthetic-data distillation through SFT was chosen over SFT on original data alone and over reinforcement fine-tuning (summarised from section 9.4).
+3. **Data.** Bitext seed set, frozen partitions, challenge-set rationale, teacher prompt version, variation mix, and filtering results (generated, accepted, and rejected counts with reasons).
+4. **Training setup.** Student model, QLoRA configuration, the single locked hyperparameter recipe, pinned tokenizer, and best-epoch selection rule.
+5. **Results.** Conditions A, B, and E (and D if run) on the held-out test and challenge sets: macro-F1, per-intent results, and response-quality scores, with sample counts.
+6. **Cost.** Teacher API cost, GPU hours, and the cost per accepted synthetic example.
+7. **Error analysis.** Representative failures, especially on rare, noisy, multi-intent, and out-of-scope inputs.
+8. **Limitations and future work.** Bitext is not an independent real-world test set; single random seed; about 1,000 synthetic examples only; deferred ablations; preference-based or reinforcement refinement.
+
+A negative or null result for H1 is reported in the same structure.
+
 ## 13. Success criteria
 
 **This study:** successful when Conditions A, B, and E have been evaluated on the frozen held-out and challenge sets, the comparison is reported with sample sizes and limitations, and the pipeline from ingest through evaluation can be reproduced from configuration files. A negative or small H1 result remains a valid research outcome.
@@ -417,14 +547,20 @@ Teacher API generation
 Raw synthetic-data store
     ↓
 Deterministic validation and deduplication
+  (length checks use pinned student tokenizer)
     ↓
 Model-based and human quality review
     ↓
 Versioned accepted dataset
     ↓
+Chat-template formatting with pinned student tokenizer
+    ↓
 QLoRA/SFT training
+  (frozen base model in 4-bit; train LoRA adapters only; rank r=8 default)
+  (log rank, alpha, dropout, target modules, tokenizer revision)
     ↓
 Frozen evaluation suite
+  (token-count metrics use same pinned tokenizer)
     ↓
 Model registry and inference demo
 ```
@@ -535,6 +671,7 @@ Notebooks should support exploration and communication; production pipeline logi
 ### Phase 4: Fine-tuning and experiments
 
 - Train **B** and **E** (**D** if compute remains). Evaluate **A** without training.
+- For each run: save a checkpoint at the end of every epoch; record validation loss and macro-F1 per epoch; select the best-epoch checkpoint for held-out evaluation.
 - Skip volume and teacher-tier ablations.
 - Track hardware, cost, hyperparameters, and the single training-recipe seed.
 
